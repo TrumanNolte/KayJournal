@@ -1,40 +1,109 @@
 // utils/monday.js
 const axios = require('axios')
 
-const apiKey = process.env.eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjUzMTIwNjczMSwiYWFpIjoxMSwidWlkIjo3NjIzNzI2OSwiaWFkIjoiMjAyNS0wNi0yNVQyMToyODo0OC4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTY3MDIzNDYsInJnbiI6InVzZTEifQ.LxQxTwFFB5E_qkZEY2VvMTeNLp1ROYsTaNEFm66UOLU
-const boardId = process.env.9455781988
+// Monday.com API configuration
+const MONDAY_API_URL = 'https://api.monday.com/v2'
+const MONDAY_API_TOKEN = process.env.MONDAY_API_TOKEN
+const MONDAY_BOARD_ID = process.env.MONDAY_BOARD_ID || 'your_board_id_here'
 
-// Helper to save a journal entry
-async function saveEntry(user, text) {
+// GraphQL mutation to create a new item in Monday.com
+const CREATE_ITEM_MUTATION = `
+  mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
+    create_item (
+      board_id: $boardId,
+      item_name: $itemName,
+      column_values: $columnValues
+    ) {
+      id
+      name
+    }
+  }
+`
+
+/**
+ * Save a journal entry to Monday.com
+ * @param {string} user - Slack username
+ * @param {string} entry - Journal text
+ * @returns {Promise<Object>} - Response from Monday.com API
+ */
+async function saveEntryToMonday(user, entry) {
   try {
-    const query = `
-      mutation {
-        create_item(
-          board_id: ${boardId},
-          item_name: "Journal Entry",
-          column_values: "{ \\"User\\": \\"${user}\\", \\"Entry\\": \\"${text}\\", \\"Date\\": \\"${new Date().toISOString().split('T')[0]}\\" }"
-        ) {
-          id
-        }
-      }
-    `
+    if (!MONDAY_API_TOKEN) {
+      throw new Error('MONDAY_API_TOKEN environment variable is not set');
+    }
 
-    const res = await axios.post(
-      'https://api.monday.com/v2',
-      { query },
+    // You'll need to replace BOARD_ID with your actual Monday.com board ID
+    const BOARD_ID = process.env.MONDAY_BOARD_ID || 9455781988; // Replace with your board ID
+    
+    const today = new Date().toISOString().split('T')[0];
+    const columnValues = JSON.stringify({
+      "text_mks8qmaf": user, // User column
+      "long_text_mks8bfeq": entry, // Entry column
+      "date_mks9dpna": today, // Date column (simple date)
+    });
+
+    const response = await axios.post(
+      MONDAY_API_URL,
+      {
+        query: CREATE_ITEM_MUTATION,
+        variables: {
+          boardId: BOARD_ID,
+          itemName: `Journal Entry - ${user}`,
+          columnValues: columnValues
+        }
+      },
       {
         headers: {
-          Authorization: apiKey,
+          'Authorization': MONDAY_API_TOKEN,
           'Content-Type': 'application/json',
-        },
+          'API-Version': '2023-10'
+        }
       }
-    )
+    );
 
-    return res.data
+    console.log('Successfully saved to Monday.com:', response.data);
+    return response.data;
   } catch (error) {
-    console.error('Error saving to Monday.com:', error.response?.data || error.message)
-    throw error
+    console.error('Error saving to Monday.com:', error.response?.data || error.message);
+    throw error;
   }
 }
 
-module.exports = { saveEntry }
+/**
+ * Test function to verify Monday.com connection
+ */
+async function testMondayConnection() {
+  try {
+    const query = `
+      query {
+        boards {
+          id
+          name
+        }
+      }
+    `;
+
+    const response = await axios.post(
+      MONDAY_API_URL,
+      { query },
+      {
+        headers: {
+          'Authorization': MONDAY_API_TOKEN,
+          'Content-Type': 'application/json',
+          'API-Version': '2023-10'
+        }
+      }
+    );
+
+    console.log('Available boards:', response.data.data.boards);
+    return response.data.data.boards;
+  } catch (error) {
+    console.error('Error testing Monday.com connection:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+module.exports = {
+  saveEntryToMonday,
+  testMondayConnection
+};
