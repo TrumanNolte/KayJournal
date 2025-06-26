@@ -9,20 +9,31 @@ const app = express()
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json())
 
+const usedBefore = new Set();
+
 // Slack webhook handler for /journal command
 app.post('/journal-entry', async (req, res) => {
-  const { user_name, text, response_url } = req.body;
+  const { user_name, user_id, text, response_url } = req.body;
 
-  // Respond to Slack immediately to avoid operation_timeout
-  res.json({
-    response_type: 'ephemeral',
-    text: '📝 Saving your journal entry...'
-  });
+  let firstTime = false;
+  if (!usedBefore.has(user_id)) {
+    firstTime = true;
+    res.json({
+      response_type: 'ephemeral',
+      text: "Hey! I'm Kay 👋. Use `/j your thoughts here` to save a private journal entry. I'll quietly store it for you — no pressure, just reflection."
+    });
+  } else {
+    res.json({
+      response_type: 'ephemeral',
+      text: '📝 Saving your journal entry...'
+    });
+  }
 
   // Asynchronously save to Monday.com and send follow-up to Slack
   (async () => {
     try {
       await saveEntryToMonday(user_name, text);
+      usedBefore.add(user_id);
       if (response_url) {
         await axios.post(response_url, {
           response_type: 'ephemeral',
