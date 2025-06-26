@@ -2,6 +2,7 @@
 require('dotenv').config()
 const express = require('express')
 const { saveEntryToMonday, testMondayConnection } = require('./utils/monday')
+const axios = require('axios')
 
 const app = express()
 
@@ -10,35 +11,34 @@ app.use(express.json())
 
 // Slack webhook handler for /journal command
 app.post('/journal-entry', async (req, res) => {
-  try {
-    console.log('Received Slack webhook:', req.body)
-    
-    // Extract data from Slack payload
-    const { user_name, text, response_url } = req.body
-    
-    if (!user_name || !text) {
-      return res.json({
-        response_type: 'ephemeral',
-        text: '❌ Please provide both a username and journal entry text.'
-      })
-    }
+  const { user_name, text, response_url } = req.body;
 
-    // Save to Monday.com
-    await saveEntryToMonday(user_name, text)
-    
-    // Send confirmation back to Slack
-    res.json({
-      response_type: 'ephemeral',
-      text: `✅ Journal entry saved! Thanks for sharing, ${user_name}.`
-    })
-    
-  } catch (error) {
-    console.error('Error processing journal entry:', error)
-    res.json({
-      response_type: 'ephemeral',
-      text: '❌ Sorry, there was an error saving your journal entry. Please try again.'
-    })
-  }
+  // Respond to Slack immediately to avoid operation_timeout
+  res.json({
+    response_type: 'ephemeral',
+    text: '📝 Saving your journal entry...'
+  });
+
+  // Asynchronously save to Monday.com and send follow-up to Slack
+  (async () => {
+    try {
+      await saveEntryToMonday(user_name, text);
+      if (response_url) {
+        await axios.post(response_url, {
+          response_type: 'ephemeral',
+          text: `✅ Journal entry saved! Thanks for sharing, ${user_name}.`
+        });
+      }
+    } catch (error) {
+      if (response_url) {
+        await axios.post(response_url, {
+          response_type: 'ephemeral',
+          text: '❌ Sorry, there was an error saving your journal entry. Please try again.'
+        });
+      }
+      console.error('Error processing journal entry:', error);
+    }
+  })();
 })
 
 // Test route for Monday.com connection
